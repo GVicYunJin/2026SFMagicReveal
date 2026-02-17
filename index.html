@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>春晚魔术计算器</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+html, body {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+.calculator {
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.display {
+  flex: 1;
+  color: white;
+  font-size: 80px;
+  font-weight: 300;
+  text-align: right;
+  padding: 20px 10px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.buttons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding-bottom: 24px;
+}
+
+.button {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: none;
+  font-size: 30px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+.button:active {
+  opacity: 0.7;
+  transform: scale(0.95);
+}
+.button-gray { background: #a5a5a5; color: #000; }
+.button-dark { background: #333; color: #fff; }
+.button-orange { background: #ff9500; color: #fff; }
+.button-orange.active { background: #fff; color: #ff9500; }
+.button-zero {
+  grid-column: span 2;
+  aspect-ratio: auto;
+  border-radius: 50px;
+  justify-content: flex-start;
+  padding-left: 32px;
+}
+
+.modal {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.7);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+.modal-box {
+  background: white;
+  padding: 24px;
+  border-radius: 16px;
+  font-size: 18px;
+}
+</style>
+</head>
+<body>
+<div class="calculator">
+  <div class="modal" id="modal">
+    <div class="modal-box" id="modalText">正在自动操作...</div>
+  </div>
+  <div class="display" id="display">0</div>
+  <div class="buttons">
+    <button class="button button-gray" data-key="AC">AC</button>
+    <button class="button button-gray" data-key="+/-">+/-</button>
+    <button class="button button-gray" data-key="%">%</button>
+    <button class="button button-orange" data-key="/">÷</button>
+
+    <button class="button button-dark" data-key="7">7</button>
+    <button class="button button-dark" data-key="8">8</button>
+    <button class="button button-dark" data-key="9">9</button>
+    <button class="button button-orange" data-key="*">×</button>
+
+    <button class="button button-dark" data-key="4">4</button>
+    <button class="button button-dark" data-key="5">5</button>
+    <button class="button button-dark" data-key="6">6</button>
+    <button class="button button-orange" data-key="-">−</button>
+
+    <button class="button button-dark" data-key="1">1</button>
+    <button class="button button-dark" data-key="2">2</button>
+    <button class="button button-dark" data-key="3">3</button>
+    <button class="button button-orange" data-key="+">+</button>
+
+    <button class="button button-dark button-zero" data-key="0">0</button>
+    <button class="button button-dark" data-key=".">.</button>
+    <button class="button button-orange" data-key="=">=</button>
+  </div>
+</div>
+
+<script>
+const display = document.getElementById('display');
+const modal = document.getElementById('modal');
+const modalText = document.getElementById('modalText');
+
+let currentValue = '0';
+let prevValue = '';
+let op = null;
+let activeOpBtn = null;
+
+let isAutoMode = false;
+let acClickCount = 0; // 计数 AC 点击次数
+
+let num1 = 0, num2 = 0;
+let sumNormal = 0;
+let timeNumber = '';
+let showNumber = '';
+let finalNumber = '';
+let lockInput = false;
+let readyForFinal = false;
+
+function updateDisplay() {
+  display.textContent = currentValue;
+  const sizes = [80, 64, 48, 32];
+  for (let size of sizes) {
+    display.style.fontSize = size + 'px';
+    if (display.scrollWidth <= display.clientWidth + 2) break;
+  }
+}
+
+function getTimeNumber() {
+  const d = new Date();
+  const month = (d.getMonth() + 1).toString();
+  const date = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return month + date + h + m;
+}
+
+function showModal(text, ms = 1500) {
+  modalText.textContent = text;
+  modal.style.display = 'flex';
+  setTimeout(() => { modal.style.display = 'none'; }, ms);
+}
+
+function clearOperatorActive() {
+  if (activeOpBtn) {
+    activeOpBtn.classList.remove('active');
+    activeOpBtn = null;
+  }
+}
+
+// ========== 核心修改：点 AC ≥3 次就激活魔术 ==========
+function clearAll() {
+  acClickCount++;
+  if (acClickCount >= 3) {
+    isAutoMode = true;
+    timeNumber = getTimeNumber();
+    lockInput = false;
+    readyForFinal = false;
+    num1 = num2 = sumNormal = 0;
+    acClickCount = 0; // 激活后重置计数
+  }
+
+  currentValue = '0';
+  prevValue = '';
+  op = null;
+  clearOperatorActive();
+  updateDisplay();
+}
+
+function inputNumber(n) {
+  if (lockInput) return;
+  clearOperatorActive();
+  if (currentValue === '0') currentValue = n;
+  else currentValue += n;
+
+  if (isAutoMode && !op) num1 = currentValue;
+  if (isAutoMode && op)  num2 = currentValue;
+
+  updateDisplay();
+}
+
+function setOperation(operation, btn) {
+  if (lockInput) return;
+
+  if (isAutoMode && operation === '+' && currentValue == sumNormal && sumNormal != 0) {
+    lockInput = true;
+    clearOperatorActive();
+
+    setTimeout(() => {
+      finalNumber = timeNumber;
+      showNumber = String(Number(finalNumber) - Number(num1) - Number(num2));
+      showModal("正在自动操作...", 1500);
+      currentValue = showNumber;
+      updateDisplay();
+      readyForFinal = true;
+    }, 2000);
+    return;
+  }
+
+  clearOperatorActive();
+  if (op) calculate();
+
+  prevValue = currentValue;
+  op = operation;
+  currentValue = '0';
+  activeOpBtn = btn;
+  activeOpBtn.classList.add('active');
+  updateDisplay();
+}
+
+function calculate() {
+  if (lockInput && !readyForFinal) return;
+
+  if (readyForFinal) {
+    currentValue = finalNumber;
+    updateDisplay();
+    isAutoMode = false;
+    lockInput = false;
+    readyForFinal = false;
+    acClickCount = 0;
+    return;
+  }
+
+  if (!isAutoMode) {
+    if (!op) return;
+    let res = eval(`${prevValue}${op == '×' ? '*' : op == '÷' ? '/' : op}${currentValue}`);
+    currentValue = String(res);
+    op = null;
+    clearOperatorActive();
+    updateDisplay();
+    return;
+  }
+
+  if (isAutoMode && op === '+') {
+    sumNormal = Number(num1) + Number(num2);
+    currentValue = String(sumNormal);
+    op = null;
+    clearOperatorActive();
+    updateDisplay();
+  }
+}
+
+document.querySelectorAll('.button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const key = btn.dataset.key;
+    if (lockInput && key !== '=') return;
+
+    if (key >= '0' && key <= '9') inputNumber(key);
+    else if (key === 'AC') clearAll();
+    else if (key === '=') calculate();
+    else if (['+', '-', '*', '/'].includes(key)) setOperation(key, btn);
+  });
+});
+
+updateDisplay();
+</script>
+</body>
+</html>
